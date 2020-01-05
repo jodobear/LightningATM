@@ -1,224 +1,277 @@
 #!/usr/bin/python3
-
-import os, sys, time, logging
+import logging
+import os
+import sys
+import time
+import math
 
 import RPi.GPIO as GPIO
-import lightning, display, qr
+from PIL import Image, ImageDraw
 
-from PIL import Image, ImageFont, ImageDraw
+import display
+import lndrest
+import lntxbot
+import qr
+import config
+import utils
+import importlib
 
-from utils import *
-from config import *
 
-## Check EPD_SIZE is defined
-EPD_SIZE=0.0
-if os.path.exists('/etc/default/epd-fuse'):
-    exec(open('/etc/default/epd-fuse').read())
-if EPD_SIZE == 0.0:
-    print("Please select your screen size by running 'papirus-config'.")
-    sys.exit()
+logger = logging.getLogger("MAIN")
 
-## Set sat, fiat
-FIAT = 0
-SATS = 0
-INVOICE = ''
 
-## Set btc and sat price
-BTCPRICE = getbtcprice(CURRENCY)
-SATPRICE = round((1 / (BTCPRICE * 100)) * 100000000, 2)
-
-## Button / Acceptor Pulses
-LASTIMPULSE = 0
-PULSES = 0
-LASTPUSHES = 0
-PUSHES = 0
-
-def main():
-    global FIAT
-    global SATS
-    global PULSES
-    global PUSHES
-    global INVOICE
-
-    ## Initiating logging instance
-    logging.basicConfig(filename='/home/pi/LightningATM/resources/debug.log',
-                            format='%(asctime)s %(name)s %(levelname)s %(message)s',
-                            datefmt='%Y/%m/%d %I:%M:%S %p',
-                            level=logging.INFO)
-
-    logging.info('Application started')
-
-    ## Display startup startup_screen
+def softreset():
+    """Displays startup screen and deletes fiat amount
+    """
+    config.SATS = 0
+    config.FIAT = 0
     display.update_startup_screen()
-
-    ## Defining GPIO BCM Mode
-    GPIO.setmode(GPIO.BCM)
-
-    ## Setup GPIO Pins for coin acceptor and button
-    GPIO.setup(5, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-    GPIO.setup(6,GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-    ## Setup coin interrupt channel (bouncetime for switch bounce)
-    GPIO.add_event_detect(5, GPIO.RISING,callback=buttonevent, bouncetime=200)
-    GPIO.add_event_detect(6,GPIO.FALLING,callback=coinevent)
-
-    while True:
-        time.sleep(0.5)
-        ## Detect when coins are being inserted
-        if((time.time() - LASTIMPULSE > 0.5) and (PULSES > 0)):
-            if (PULSES == 2):
-                FIAT += 0.02
-                SATS = FIAT * 100 * SATPRICE
-                logging.info('2 cents added')
-                update_amount_screen(PAPIRUS)
-            if (PULSES == 3):
-                FIAT += 0.05
-                SATS = FIAT * 100 * SATPRICE
-                logging.info('5 cents added')
-                update_amount_screen(PAPIRUS)
-            if (PULSES == 4):
-                FIAT += 0.1
-                SATS = FIAT * 100 * SATPRICE
-                logging.info('10 cents added')
-                update_amount_screen(PAPIRUS)
-            if (PULSES == 5):
-                FIAT += 0.2
-                SATS = FIAT * 100 * SATPRICE
-                logging.info('20 cents added')
-                update_amount_screen(PAPIRUS)
-            if (PULSES == 6):
-                FIAT += 0.5
-                SATS = FIAT * 100 * SATPRICE
-                logging.info('50 cents added')
-                update_amount_screen(PAPIRUS)
-            if (PULSES == 7):
-                FIAT += 1
-                SATS = FIAT * 100 * SATPRICE
-                logging.info('100 cents added')
-                update_amount_screen(PAPIRUS)
-            PULSES = 0
-
-        ## Detect if the buttons has been pushed
-        if((time.time() - LASTPUSHES > 0.5) and (PUSHES > 0)):
-            if (PUSHES == 1):
-                if FIAT == 0:
-                    display.update_nocoin_screen()
-                    time.sleep(3)
-                    display.update_startup_screen()
-                else:
-                    display.update_qr_request()
-                    INVOICE = qr.scan()
-                    while INVOICE == False:
-                        display.update_qr_failed()
-                        time.sleep(1)
-                        display.update_qr_request()
-                        INVOICE = qr.scan()
-                    update_payout_screen(PAPIRUS)
-
-            if (PUSHES == 2):
-                logging.info('Button pushed twice (add coin)')
-                print('Button pushed twice (add coin)')
-                PULSES = 2
-
-            if (PUSHES == 3):
-                logging.warning('Button pushed three times (restart)')
-                print('Button pushed three times (restart)')
-                os.execv('/home/pi/LightningATM/app.py', [''])
-                GPIO.cleanup()
-
-            if (PUSHES == 4):
-                display.update_shutdown_screen()
-                GPIO.cleanup()
-                logging.info('ATM shutdown (4 times button)')
-                os.system('sudo shutdown -h now')
-            PUSHES = 0
-
-def buttonevent(channel):
-    global LASTPUSHES
-    global PUSHES
-    LASTPUSHES = time.time()
-    PUSHES = PUSHES + 1
-
-def coinevent(channel):
-    global LASTIMPULSE
-    global PULSES
-    LASTIMPULSE = time.time()
-    PULSES = PULSES + 1
-
-def update_amount_screen(papirus):
-
-    ## initially set all white background
-    image = Image.new('1', PAPIRUS.size, WHITE)
-
-    ## Set width and heigt of screen
-    width, height = image.size
-
-    ## prepare for drawing
-    draw = ImageDraw.Draw(image)
-
-    draw.rectangle((2, 2, width - 2, height - 2), fill=WHITE, outline=BLACK)
-    draw.text((13, 10), str(round(SATS)) + ' sats', fill=BLACK, font=createfont('freemono',28))
-    draw.text((11, 37), '(' + '%.2f' % round(FIAT,2) + ' ' + CURRENCY + ')', fill=BLACK, font=createfont('freemono',20))
-    draw.text((11, 70), '(1 cent = ' + str(SATPRICE) + ' sats)', fill=BLACK, font=createfont('freemono',14))
-
-    PAPIRUS.display(image)
-    PAPIRUS.partial_update()
-
-def update_payout_screen(papirus):
-
-    # global INVOICE
-
-    ## initially set all white background
-    image = Image.new('1', PAPIRUS.size, WHITE)
-
-    ## Set width and heigt of screen
-    width, height = image.size
-
-    ## prepare for drawing
-    draw = ImageDraw.Draw(image)
+    logger.info("Softreset executed")
 
 
-    draw.rectangle((2, 2, width - 2, height - 2), fill=WHITE, outline=BLACK)
-    draw.text((15, 30), str(round(SATS)) + ' sats' , fill=BLACK, font=createfont('freemono',20))
-    draw.text((15, 50), 'on the way!' , fill=BLACK, font=createfont('freemono',15))
-
-    PAPIRUS.display(image)
-    PAPIRUS.update()
-
-    # INVOICE = qr.scan()
-
-    decodreq = lightning.decoderequest(INVOICE)
-
-    print(decodreq,round(SATS))
-
-    if (decodreq == str(round(SATS))) or (decodreq == True):
-            lightning.payout(SATS, INVOICE)
-
-            result = lightning.lastpayment(INVOICE)
-
-            draw.text((15, 70), str(result), fill=BLACK, font=createfont('freemono',15))
-
-            PAPIRUS.display(image)
-            PAPIRUS.partial_update()
-            time.sleep(1)
-
-            if result == 'Success':
-                display.update_thankyou_screen()
-            else:
-                display.update_payment_failed()
-                time.sleep(120)
-
-            #os.execl(os.path.expanduser('~/LightningATM/app.py'), *sys.argv)
-            os.execv('/home/pi/LightningATM/app.py', [''])
-    else:
-        print('Please show correct invoice')
+def button_event(channel):
+    """Registers a button push event
+    """
+    config.LASTPUSHES = time.time()
+    config.PUSHES = config.PUSHES + 1
 
 
-if __name__ == '__main__':
-    try:
-        main()
-    except KeyboardInterrupt:
+def coin_event(channel):
+    """Registers a coin insertion event
+    """
+    print(float(round(time.time() - config.LASTIMPULSE, 3)))
+    if time.time() - config.LASTIMPULSE > 0.160:
+        config.COINLIST.append("0")
+    config.LASTIMPULSE = time.time()
+    config.PULSES = config.PULSES + 1
+    config.COINLIST.append("1")
+    print(config.COINLIST)
+
+
+def button_pushed():
+    """Actions button pushes by number
+    """
+    if config.PUSHES == 1:
+        """If no coins inserted, update the screen.
+        If coins inserted, scan a qr code for the exchange amount
+        """
+        if config.FIAT == 0:
+            display.update_nocoin_screen()
+            time.sleep(3)
+            display.update_startup_screen()
+        else:
+            display.update_qr_request()
+            qrcode = qr.scan()
+            config.INVOICE = lndrest.evaluate_scan(qrcode)
+            while config.INVOICE is False:
+                display.update_qr_failed()
+                time.sleep(1)
+                display.update_qr_request()
+                qrcode = qr.scan()
+                config.INVOICE = lndrest.evaluate_scan(qrcode)
+            display.update_payout_screen()
+            lndrest.handle_invoice()
+            softreset()
+
+    if config.PUSHES == 2:
+        """If no coins inserted, update the screen.
+        If coins are inserted, return a lnurl for the exchange amount
+        """
+        if config.FIAT == 0:
+            display.update_nocoin_screen()
+            time.sleep(3)
+            display.update_startup_screen()
+        else:
+            lntxbot.process_using_lnurl(config.SATS)
+            # Softreset and startup screen
+            softreset()
+
+    if config.PUSHES == 3:
+        """Store new lntxbot credential via a QR code scan
+        """
+        display.update_lntxbot_scan()
+
+        # scan the credentials
+        lntxcreds = lntxbot.scan_creds()
+
+        # save them to the current config and reload config file
+        config.update_config("lntxbot", "creds", lntxcreds)
+        if config.check_dangermode():
+            importlib.reload(config)
+
+        # return the current balance to the user on the screen
+        balance = lntxbot.get_lnurl_balance()
+        display.update_lntxbot_balance(balance)
+        softreset()
+
+    if config.PUSHES == 4:
+        """Simulates adding a coin
+        """
+        logger.info("Button pushed four times (add coin)")
+        print("Button pushed four times (add coin)")
+        config.PULSES = 2
+
+    if config.PUSHES == 5:
+        """Restarts the application
+        """
+        logger.warning("Button pushed five times (restart)")
+        print("Button pushed five times (restart)")
+        utils.softreset()
+
+    if config.PUSHES == 6:
+        """Shutdown the host machine
+        """
         display.update_shutdown_screen()
         GPIO.cleanup()
-        logging.info('Application finished (Keyboard Interrupt)')
-        sys.exit('Manually Interrupted')
+        logger.warning("ATM shutdown (6 times button)")
+        os.system("sudo shutdown -h now")
+    config.PUSHES = 0
+
+
+def coins_inserted():
+    """Actions coins inserted
+    """
+    if config.FIAT == 0:
+        config.BTCPRICE = utils.get_btc_price(config.conf["atm"]["cur"])
+        config.SATPRICE = math.floor((1 / (config.BTCPRICE * 100)) * 100000000)
+        logger.info("Satoshi price updated")
+
+    if config.PULSES == 2:
+        config.FIAT += 0.02
+        config.SATS = utils.get_sats()
+        config.SATSFEE = utils.get_sats_with_fee()
+        config.SATS -= config.SATSFEE
+        logger.info("2 cents added")
+        display.update_amount_screen()
+    if config.PULSES == 3:
+        config.FIAT += 0.05
+        config.SATS = utils.get_sats()
+        config.SATSFEE = utils.get_sats_with_fee()
+        config.SATS -= config.SATSFEE
+        logger.info("5 cents added")
+        display.update_amount_screen()
+    if config.PULSES == 4:
+        config.FIAT += 0.1
+        config.SATS = utils.get_sats()
+        config.SATSFEE = utils.get_sats_with_fee()
+        config.SATS -= config.SATSFEE
+        logger.info("10 cents added")
+        display.update_amount_screen()
+    if config.PULSES == 5:
+        config.FIAT += 0.2
+        config.SATS = utils.get_sats()
+        config.SATSFEE = utils.get_sats_with_fee()
+        config.SATS -= config.SATSFEE
+        logger.info("20 cents added")
+        display.update_amount_screen()
+    if config.PULSES == 6:
+        config.FIAT += 0.5
+        config.SATS = utils.get_sats()
+        config.SATSFEE = utils.get_sats_with_fee()
+        config.SATS -= config.SATSFEE
+        logger.info("50 cents added")
+        display.update_amount_screen()
+    if config.PULSES == 7:
+        config.FIAT += 1
+        config.SATS = utils.get_sats()
+        logger.info("100 cents added")
+        display.update_amount_screen()
+    config.PULSES = 0
+
+
+def monitor_coins_and_button():
+    """Monitors coins inserted and buttons pushed
+    """
+    time.sleep(0.2)
+    # Detect when coins are being inserted
+    if (time.time() - config.LASTIMPULSE > 0.5) and (config.PULSES > 0):
+        coins_inserted()
+        # if config.COINLIST[0] == "0":
+        #     print(config.COINLIST[1 : config.COINLIST.index("0", 1)])
+
+    # Detect if the button has been pushed
+    if (time.time() - config.LASTPUSHES > 0.5) and (config.PUSHES > 0):
+        button_pushed()
+
+
+def setup_coin_acceptor():
+    """Initialises the coin acceptor parameters and sets up a callback for button pushes
+    and coin inserts.
+    """
+    # Defining GPIO BCM Mode
+    GPIO.setmode(GPIO.BCM)
+
+    # Setup GPIO Pins for coin acceptor and button
+    GPIO.setup(5, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    GPIO.setup(6, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    # Setup coin interrupt channel (bouncetime for switch bounce)
+    GPIO.add_event_detect(5, GPIO.RISING, callback=button_event, bouncetime=200)
+    GPIO.add_event_detect(6, GPIO.FALLING, callback=coin_event)
+
+
+# def check_dangermode():
+#     """Check for DANGERMODE and wipe any saved credentials if off"
+#     """
+#     # if dangermode is NOT on
+#     if config.conf["atm"]["dangermode"].lower() != "on":
+#         logger.warning("DANGERMODE off")
+#
+#         # wipe any saved values from the config by saving an empty value to it
+#         config.update_config("lntxbot", "creds", "")
+#         config.update_config("lnd", "macaroon", "")
+#         config.update_config("atm", "activewallet", "")
+#
+#         # get the static dict from within the conf and overwrite it to config.conf
+#         config.conf = config.conf._sections
+#
+#         # get new lntxbot creds from qr code scan
+#         print("Scan lntxbot creds now\n")
+#         print("            +---+")
+#         print("+-----------+---+")
+#         print("|      .-.      |")
+#         print("|     (   )     |")
+#         print("|      `-'      |")
+#         print("+---------------+\n")
+#         time.sleep(2)
+#         try:
+#             config.conf["lntxbot"]["creds"] = lntxbot.scan_creds()
+#             logger.info("Credentials saved in volatile memory (deleted after reboot)")
+#         except utils.ScanError:
+#             logger.error("Error scanning lntxbot creds with dangermode off")
+#             return
+#     else:
+#         logger.info("DANGERMODE on. Loading values from config.ini...")
+#         # config.check_config()
+
+
+def main():
+    utils.check_epd_size()
+    logger.info("Application started")
+
+    # Checks dangermode and start scanning for credentials
+    # Only activate once software ready for it
+    # check_dangermode()
+
+    # Display startup startup_screen
+    display.update_startup_screen()
+
+    setup_coin_acceptor()
+
+    while True:
+        monitor_coins_and_button()
+
+
+if __name__ == "__main__":
+    while True:
+        try:
+            main()
+        except KeyboardInterrupt:
+            display.update_shutdown_screen()
+            GPIO.cleanup()
+            logger.info("Application finished (Keyboard Interrupt)")
+            sys.exit("Manually Interrupted")
+        except Exception:
+            logger.exception("Oh no, something bad happened! Restarting...")
+            GPIO.cleanup()
+            os.execv("/home/pi/LightningATM/app.py", [""])

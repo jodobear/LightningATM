@@ -4,11 +4,13 @@ This LightningATM was built to distribute small amounts of BTC - obviously - it 
 
 A physical coin exchanged into bitcoin and send to your lightning wallet in seconds. Use this project to educate your family and friends or guests at your bitcoin meetup - a convenient and easy on-boarding process for people that are new to bitcoin.
 
-A comprehensive guide on how to setup the LightningATM will follow here - please stay tuned. Meanwhile just just send me messages and ask questions via Twitter (@21iseough).  
+A comprehensive guide on how to setup the LightningATM will follow here - please stay tuned. Meanwhile just just send me messages and ask questions via Twitter (@21isenough).  
 
-![alt text](https://github.com/21isenough/LightningATM/blob/master/resources/startup_screen.jpg)
+Please check out this video, to see the [LightningATM in action:](https://twitter.com/21isenough/status/1170808396955738114?s=20)
 
-### Parts list
+![alt text](https://github.com/21isenough/LightningATM/blob/master/resources/images/LightningATM_rev3.jpg)
+
+### Parts list (price estimate: 50-70 USD)
 
 1. Raspberry Pi Zero WH - http://bit.ly/2maXBr6  
   If you can, get the version WH (not just W). It comes with pre soldered headers and can be used out of the box.
@@ -34,8 +36,43 @@ A comprehensive guide on how to setup the LightningATM will follow here - please
 8. Power supply  
   I'm working on a solution that lets you use just one power supply. For now you need 5V for the Raspberry Pi Zero (supplied through USB) and another 12V power supply to power the coin acceptor (preferably with a balun for easier connecting).
 
+
 ### Todo
 
+#### Prio 1
+- [ ] Try different way of detecting inserted coins (populating a list and setting a delimiter)
+- [ ] Rethink the design decisions in regards to hardware (https://www.arrow.com/en/products)
+- [ ] PCB Board design (https://easyeda.com/, http://kicad-pcb.org/)
+- [ ] 5V-12V step up transformer (http://www.electronics-lab.com/project/5v-to-12v-step-up-dc-dc-converter/)
+- [ ] Try different e-ink screen
+- [ ] Solve security concerns in regards to lnurl (scan over the shoulder)
+- [ ] Add coin return stopper to 3d design
+#### Prio 2
+- [ ] Add second button and admin menu
+- [ ] Add admin function only available through qr pass
+- [ ] Run certain functions in threads
+- [ ] Additional button for restart and shutdown
+- [ ] Find solution to work without jumper cables
+- [ ] Add encryption of admin.macaroon in idle mode
+- [ ] Add encrypted partition with sensible data
+- [ ] Check out BTCPay API to integrate backend
+#### Prio 3
+- [ ] Store data in database
+- [ ] Add AP option for users to login into their wifis (https://github.com/21isenough/RaspiWiFi)
+- [ ] 2 layer for coins to reject before accepted
+#### Done
+- [X] Design ideas for case
+- [X] Slightly recline front board to the back, add immersion for camera
+- [X] Move scanning function into utils
+- [X] Move all display functions into display.py
+- [X] Implement lnurl with lntxbot
+- [X] Draw printer and boards in 3D (https://www.onshape.com/)
+- [X] Write list of all compatible wallets/qr qr_codes
+- [X] Test qr code on 2" eInk display (works)
+- [X] Research camera resolutions / qr code scanning
+- [X] Check if there's other zbar python libraries
+- [X] Change to wide angle camera
+- [X] Sort out scan errors
 - [x] QR code scan function
 - [x] Validate requested amount
 - [x] Reject to high amounts
@@ -46,21 +83,4 @@ A comprehensive guide on how to setup the LightningATM will follow here - please
 - [x] Implement continuous QR Scan
 - [x] Lower case ln invoices
 - [x] Find a faster solution for QR scans (zbarcam)
-- [ ] Organize todos better
-- [ ] Research camera resolutions / qr code scanning 
-- [ ] Check if there's other zbar python libraries
-- [ ] Store data in database
-- [ ] Rethink the design decisions in regards to hardware
-- [ ] Find solution to work without jumper cables
-- [ ] Add encryption of admin.macaroon in idle mode
-- [ ] Add AP option for users to login into their wifis (https://github.com/21isenough/RaspiWiFi)
-- [ ] Change to wide angle camera
-- [ ] Sort out scan errors
-- [ ] Design ideas for case
-- [ ] Check out BTCPay API to integrate backend
-- [ ] Run certain functions in threads
-- [ ] PCB Board design
-- [ ] 5V-12V step up transformer (http://www.electronics-lab.com/project/5v-to-12v-step-up-dc-dc-converter/)
-- [ ] Implement multilingual support
-- [ ] 2 layer for coins to reject before accepted
-- [ ] Write list of all compatible wallets/qr qr_codes
+- [x] Organize todos better
